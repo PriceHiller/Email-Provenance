@@ -27,7 +27,7 @@ async def handle_domain_scrape(domain: str, dynamo_table: str, _ctx: LambdaConte
             output = dynamodb.update_item(
                 TableName=dynamo_table,
                 Key={"domain": {"S": domain}},
-                UpdateExpression="SET dkim_records = list_append(if_not_exists(dkim_records, :empty_list), :new_dkim_record), domain = :domain",
+                UpdateExpression="SET dkim_records = list_append(if_not_exists(dkim_records, :empty_list), :new_dkim_record), sdomain = :domain",
                 ExpressionAttributeValues={
                     ":empty_list": {"L": []},
                     ":domain": {"S": domain},
@@ -81,7 +81,7 @@ async def handle_domain_retrieval(domain: str, dynamo_table: str, _ctx: LambdaCo
             rec: dict[str, Any] = record["M"]  # pyright: ignore[reportUnknownVariableType]
 
             drec = DkimRecord(
-                qname=rec["cname"]["S"],  # pyright: ignore[reportUnknownArgumentType]
+                qname=rec["qname"]["S"],  # pyright: ignore[reportUnknownArgumentType]
                 cname=rec["cname"]["S"],  # pyright: ignore[reportUnknownArgumentType]
                 value=rec["value"]["S"],  # pyright: ignore[reportUnknownArgumentType]
             ).to_dict()
@@ -104,7 +104,7 @@ async def handle_rescrape(dynamo_table: str, _ctx: LambdaContext):
             continue
 
         for item in values:  # pyright: ignore[reportUnknownVariableType]
-            domain_entry: dict[str, str] = item.get("domain")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+            domain_entry: dict[str, str] = item.get("sdomain")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             if not domain_entry:
                 continue
 

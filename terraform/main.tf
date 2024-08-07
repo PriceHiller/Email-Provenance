@@ -111,6 +111,7 @@ resource "aws_lambda_function" "lambda" {
 
   handler = "app.main.router"
   runtime = "python3.13"
+  timeout = 60
 }
 
 module "eventbridge" {
@@ -171,7 +172,9 @@ data "aws_iam_policy_document" "lambda_policy_document" {
     ]
     actions = [
       "dynamodb:GetItem",
-      "dynamodb:PutItem"
+      "dynamodb:PutItem",
+      "dynamodb:Scan",
+      "dynamodb:UpdateItem"
     ]
   }
 
@@ -196,7 +199,7 @@ resource "aws_iam_policy" "dynamodb_lambda_policy" {
 resource "aws_iam_role_policy_attachment" "lambda_attachements" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.dynamodb_lambda_policy.arn
-} 
+}
 
 resource "aws_iam_role" "lambda_role" {
   name               = "ekim-execution-role"
