@@ -1,0 +1,79 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+    dark-theme-id: 200
+    theme-id: 0
+  }
+}
+
+*: {
+  style: {
+    bold: true
+  }
+}
+
+Intake: {
+  width: 500
+  label.near: top-center
+  icon: https://icons.terrastruct.com/aws%2FCompute%2FAWS-Lambda.svg
+
+  Authorization: {
+    tooltip: Authorize the caller via AWS IAM roles
+  }
+
+  Validation: {
+    tooltip: Ensure the given input domain is actually a valid domain
+  }
+
+  Authorization -> Validation
+}
+
+Domain Queue: Domain Queue (SQS) {
+  icon: https://icons.terrastruct.com/aws%2FApplication%20Integration%2FAmazon-Simple-Queue-Service-SQS.svg
+  shape: image
+  tooltip: Stores the domains to be processed
+}
+
+DKIM Selector Discovery: {
+  Heuristic Brute Force
+  Email Header Extraction
+  AXFR
+  Certificate Transparanecy Logs
+}
+
+Known Selectors: {}
+
+Intake.Validation -> Domain Queue -> DKIM Selector Discovery -> Domain
+
+#              ┌────────────┐          ┌──────────────┐
+# “Add domain” │  Intake    │ 1. Put   │  Domain      │
+# CLI / API ──▶│  API       ├─────────▶│  Queue (SQS) │
+#              └────────────┘          └─────┬────────┘
+#                                            ▼
+#                                    ┌──────────────┐
+#                                    │ Selector     │
+#                                    │ Discovery SF │ 2. discover selectors
+#                                    └─────┬────────┘
+#                                          ▼ 3. emit events
+#                          ┌──────────────────────────────┐
+#                          │ DomainSelectors (DynamoDB)   │
+#                          └────────────────┬─────────────┘
+#                                           │ 4. stream
+#                                           ▼
+#                         ┌────────────────────────────────┐
+#                         │  Selector events (EventBridge) │
+#                         └───────────────┬────────────────┘
+#                                         ▼
+#                              ┌──────────────────┐
+#                              │  Record Tracker  │ 5. poll TXT
+#                              │     SF / ECS     │
+#                              └────────┬─────────┘
+#                                       ▼ 6. write artefacts
+#                             ┌─────────────────────────────┐
+#                             │ Evidence bucket (S3 Object  │
+#                             │ Lock + versioning + SSE-KMS)│
+#                             └─────────────┬───────────────┘
+#                                           ▼
+#                               ┌─────────────────────┐
+#                               │ Notary / TSA Lambda │ 7. timestamp hash
+#                               └─────────────────────┘
