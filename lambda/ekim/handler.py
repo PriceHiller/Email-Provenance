@@ -6,12 +6,12 @@ from aws_lambda_powertools import Logger
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging.buffer import LoggerBufferConfig
 
-logger = Logger(service="ekim", buffer_config=LoggerBufferConfig())
+log = Logger(service="ekim", buffer_config=LoggerBufferConfig())
 
 
 def handler(domain: str, _ctx: LambdaContext):
     try:
-        logger.info(f"Scraping dkim keys for domain: '{domain}'", domain=domain)
+        log.info(f"Scraping dkim keys for domain: '{domain}'", domain=domain)
         records = asyncio.run(scrape_dkim_selectors(domain))
         print("=" * 80)
         for record in records:
@@ -22,7 +22,7 @@ def handler(domain: str, _ctx: LambdaContext):
                 # for k, v in rrset.items:
                 #     print(">>>",v)
         print("+" * 80)
-        logger.info(f"Finished scraping dkim keys for domain: '{domain}', scraped '{len(records)}' selectors", domain=domain, records=records)
+        log.info(f"Finished scraping dkim keys for domain: '{domain}', scraped '{len(records)}' selectors", domain=domain, records=records)
         return {
             "statusCode": 200,
             "body": json.dumps({
@@ -32,7 +32,7 @@ def handler(domain: str, _ctx: LambdaContext):
             })
         }
     except Exception as e:
-        logger.error(e)
+        log.error(e)
         return {
             "statusCode": 400,
             "body": json.dumps(
