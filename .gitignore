@@ -1,4 +1,9 @@
 .terraform/
 .terraform.lock.*
 terraform.tfstate
+.terraform.tfstate.*
+terraform.tfstate*
 __pycache__/
+*.ignore.*
+*.ignore
+

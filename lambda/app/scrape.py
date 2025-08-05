@@ -1,11 +1,11 @@
 import asyncio
 import calendar
 import itertools
+import typing
 from collections.abc import Generator
-from datetime import datetime
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
-import dns.name
+import dns.rdtypes.ANY.TXT
 from dns import resolver
 from dns.rdatatype import RdataType
 from dns.asyncresolver import canonical_name, resolve
@@ -107,22 +107,47 @@ selectors = [
 ]
 
 
+class DkimRecord(TypedDict):
+    qname: str
+    cname: str
+    value: str
+    ttl: int
+
+
 class ScrapedDkimKey(NamedTuple):
     qname: str
     cname: str
     rrsets: list[RRset]
+
+    def to_dkim_record(self) -> DkimRecord:
+        rrset = self.rrsets[0]
+        txt: dns.rdtypes.ANY.TXT.TXT = typing.cast(dns.rdtypes.ANY.TXT.TXT, rrset[0])
+        value = " ".join(f'"{s.decode("utf-8")}"' for s in txt.strings)
+        return DkimRecord(
+            qname=self.qname,
+            cname=self.cname,
+            value=value,
+            ttl=rrset.ttl,
+        )
 
 
 async def scrape_dkim_record(
     qname: str,
 ) -> ScrapedDkimKey | None:
     c_qname = await canonical_name(qname)
-    log.debug(f"Qname '{qname}' had canonical name '{c_qname}'", qname=qname, cname=c_qname)
+    log.debug(
+        f"Qname '{qname}' had canonical name '{c_qname}'", qname=qname, cname=c_qname
+    )
     try:
         res = (await resolve(c_qname, RdataType.TXT)).response.answer
         return ScrapedDkimKey(qname, c_qname.to_unicode(), res)
     except (resolver.NXDOMAIN, resolver.LifetimeTimeout) as e:
-        log.debug(f"Failed to get dkim record for qname: '{qname}'", err=e, qname=qname, cname=c_qname)
+        log.debug(
+            f"Failed to get dkim record for qname: '{qname}'",
+            err=e,
+            qname=qname,
+            cname=c_qname,
+        )
         return None
 
 
@@ -137,7 +162,11 @@ async def scrape_dkim_selectors(
         async with max_concurrent_scrapes_sem:
             log.debug("Scraping qname", qname=qname)
             scraped_record = await scrape_dkim_record(qname)
-            log.info("Finished scraping records for qname", qname=qname, record=scraped_record)
+            log.info(
+                "Finished scraping records for qname",
+                qname=qname,
+                record=scraped_record,
+            )
             if scraped_record and len(scraped_record.rrsets) > 0:
                 log.debug(f"Found DKIM records for qname '{qname}'", qname=qname)
                 res.append(scraped_record)
@@ -146,4 +175,3 @@ async def scrape_dkim_selectors(
     _ = await asyncio.gather(*jobs)
 
     return res
-
