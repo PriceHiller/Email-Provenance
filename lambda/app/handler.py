@@ -1,3 +1,4 @@
+from aws_lambda_powertools.utilities.typing import LambdaContext
 from app.scrape import DkimRecord, scrape_dkim_selectors
 
 from aws_lambda_powertools import Logger
@@ -6,7 +7,7 @@ from aws_lambda_powertools.logging.buffer import LoggerBufferConfig
 log = Logger(service="ekim", buffer_config=LoggerBufferConfig())
 
 
-async def handler(domain: str):
+async def handler(domain: str, _ctx: LambdaContext):
     try:
         log.info(f"Scraping dkim keys for domain: '{domain}'", domain=domain)
         scraped_keys = await scrape_dkim_selectors(domain)
@@ -19,19 +20,15 @@ async def handler(domain: str):
         )
         return {
             "statusCode": 200,
-            "body": {
-                "status": "success",
-                "message": f"successfully scraped {len(records)} dkim records",
-                "records": records,
-            },
+            "status": "success",
+            "message": f"successfully scraped {len(records)} dkim records",
+            "records": records,
         }
     except Exception as e:
         log.error(e)
         return {
-            "statusCode": 400,
-            "body": {
-                "status": "failed",
-                "message": "failed to process request",
-                "error": str(e),
-            },
+            "statusCode": 500,
+            "status": "failed",
+            "message": "failed to process request",
+            "error": str(e),
         }

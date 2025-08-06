@@ -15,21 +15,12 @@ provider "aws" {
 
 locals {
   lambda_root = "${path.module}/../lambda"
-}
-
-resource "null_resource" "install_dependencies" {
-  provisioner "local-exec" {
-    command = "pushd '${local.lambda_root}' && uv export --frozen --no-dev --no-editable -o '${local.lambda_root}/requirements.ignore.txt' && uv pip install --no-installer-metadata --no-compile-bytecode --python-platform=x86_64-manylinux2014 --python 3.13 --target package -r '${local.lambda_root}/requirements.ignore.txt' && popd"
-  }
-
-  triggers = {
-    dependencies_versions           = filemd5("${local.lambda_root}/uv.lock")
-    source_versions_init            = filemd5("${local.lambda_root}/app/__init__.py")
-    source_versions_handler         = filemd5("${local.lambda_root}/app/handler.py")
-    source_versions_main            = filemd5("${local.lambda_root}/app/main.py")
-    source_versions_scrape          = filemd5("${local.lambda_root}/app/scrape.py")
-    source_versions_upload_selector = filemd5("${local.lambda_root}/app/upload_selector.py")
-  }
+  lambda_runtime = "python3.13"
+  deps_root   = "${path.module}/pkg-root.ignore"
+  lambda_src_files = fileset(local.lambda_root, "**")
+  lambda_src_hash = md5(join("", [
+    for f in local.lambda_src_files : filemd5("${local.lambda_root}/${f}")
+  ]))
 }
 
 resource "random_uuid" "lambda_src_hash" {
@@ -46,17 +37,68 @@ resource "random_uuid" "lambda_src_hash" {
   }
 }
 
+resource "null_resource" "install_dependencies" {
+  provisioner "local-exec" {
+    command = <<-EOC
+      uv export --frozen --no-dev --no-editable --project='${local.lambda_root}' -o 'requirements.ignore.txt'
+      mkdir -p '${local.deps_root}/python'
+      uv pip install --no-installer-metadata --no-compile-bytecode --python-platform=x86_64-manylinux2014 --python 3.13 --target '${local.deps_root}/python' -r 'requirements.ignore.txt'
+    EOC
+  }
+
+  triggers = {
+    run_always = local.lambda_src_hash
+  }
+}
+
+data "archive_file" "lambda_deps" {
+  depends_on  = [null_resource.install_dependencies]
+  source_dir  = local.deps_root
+  output_path = "${random_uuid.lambda_src_hash.result}-package.ignore.zip"
+  type        = "zip"
+}
+
+
+resource "aws_lambda_layer_version" "dependencies" {
+  layer_name               = "dependencies"
+  filename                 = data.archive_file.lambda_deps.output_path
+  source_code_hash         = data.archive_file.lambda_deps.output_base64sha256
+  description              = "Common dependencies for Lambda functions"
+  compatible_runtimes      = ["python3.13"]
+  compatible_architectures = ["x86_64", "arm64"]
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 data "archive_file" "lambda_source" {
-  depends_on = [null_resource.install_dependencies]
   excludes = [
     "__pycache__",
     ".venv",
-    "uv.lock"
+    "uv.lock",
+    "app/*__pycache__",
+     "**__pycache__",
+     "app/__pycache__"
   ]
 
   source_dir  = local.lambda_root
-  output_path = "${random_uuid.lambda_src_hash.result}.ignore.zip"
+  output_path = "${random_uuid.lambda_src_hash.result}-app.ignore.zip"
   type        = "zip"
+}
+
+
+
+resource "aws_lambda_function" "lambda" {
+  function_name    = "my_function"
+  role             = aws_iam_role.example.arn
+  filename         = data.archive_file.lambda_source.output_path
+  source_code_hash = data.archive_file.lambda_source.output_base64sha256
+  layers = [
+    aws_lambda_layer_version.dependencies.arn
+  ]
+
+  handler = "app.main.handler"
+  runtime = "python3.13"
 }
 
 data "aws_iam_policy_document" "assume_role" {
@@ -77,14 +119,3 @@ resource "aws_iam_role" "example" {
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 }
 
-resource "aws_lambda_function" "lambda" {
-  function_name    = "my_function"
-  role             = aws_iam_role.example.arn
-  filename         = data.archive_file.lambda_source.output_path
-  source_code_hash = data.archive_file.lambda_source.output_base64sha256
-
-  handler = "app.main.handler"
-  runtime = "python3.13"
-
-  # tags =
-}
