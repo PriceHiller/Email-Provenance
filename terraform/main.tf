@@ -2,7 +2,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.92"
+      version = "~> 6.2.0"
     }
   }
   required_version = ">= 1.2"
@@ -21,6 +21,7 @@ locals {
   lambda_src_hash = md5(join("", [
     for f in local.lambda_src_files : filemd5("${local.lambda_root}/${f}")
   ]))
+  dynamo_tablename = "ekim-dkim-records"
 }
 
 resource "random_uuid" "lambda_src_hash" {
@@ -86,19 +87,66 @@ data "archive_file" "lambda_source" {
   type        = "zip"
 }
 
-
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  name              = "/aws/lambda/${aws_lambda_function.lambda.function_name}"
+  retention_in_days = 7
+  lifecycle {
+    prevent_destroy = false
+  }
+}
 
 resource "aws_lambda_function" "lambda" {
-  function_name    = "my_function"
-  role             = aws_iam_role.example.arn
+  function_name    = "ekim-dkim"
+  role             = aws_iam_role.lambda_role.arn
   filename         = data.archive_file.lambda_source.output_path
   source_code_hash = data.archive_file.lambda_source.output_base64sha256
+  environment {
+    variables = {
+      DYNAMO_TABLE = local.dynamo_tablename
+    }
+  }
   layers = [
     aws_lambda_layer_version.dependencies.arn
   ]
 
-  handler = "app.main.handler"
+  handler = "app.main.router"
   runtime = "python3.13"
+}
+
+module "eventbridge" {
+  source = "terraform-aws-modules/eventbridge/aws"
+
+  create_bus = false
+
+  rules = {
+    crons = {
+      description         = "Trigger ekim dkim rescrape every 5 minutes"
+      schedule_expression = "rate(5 minutes)"
+    }
+  }
+
+  targets = {
+    crons = [
+      {
+        name  = "trigger-scrape-${aws_lambda_function.lambda.function_name}"
+        arn   = "${aws_lambda_function.lambda.arn}"
+        input = jsonencode({"endpoint": "rescrape"})
+      }
+    ]
+  }
+}
+
+resource "aws_dynamodb_table" "lambda_table" {
+  name           = "${local.dynamo_tablename}"
+  billing_mode   = "PROVISIONED"
+  read_capacity  = 20
+  write_capacity = 20
+  hash_key       = "domain"
+
+  attribute {
+    name = "domain"
+    type = "S"
+  }
 }
 
 data "aws_iam_policy_document" "assume_role" {
@@ -112,10 +160,46 @@ data "aws_iam_policy_document" "assume_role" {
 
     actions = ["sts:AssumeRole"]
   }
+
 }
 
-resource "aws_iam_role" "example" {
-  name               = "lambda_execution_role"
+data "aws_iam_policy_document" "lambda_policy_document" {
+  statement {
+    effect = "Allow"
+    resources = [
+      aws_dynamodb_table.lambda_table.arn
+    ]
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem"
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    resources = [
+      "arn:aws:logs:*:*:*"
+    ]
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "dynamodb_lambda_policy" {
+  name = "${local.dynamo_tablename}-${aws_lambda_function.lambda.function_name}"
+  description = "Allow access to dynamo db"
+  policy = data.aws_iam_policy_document.lambda_policy_document.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_attachements" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.dynamodb_lambda_policy.arn
+} 
+
+resource "aws_iam_role" "lambda_role" {
+  name               = "ekim-execution-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 }
 

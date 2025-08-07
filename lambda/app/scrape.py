@@ -1,9 +1,12 @@
 import asyncio
 import calendar
+from dataclasses import dataclass
+import dataclasses
+from datetime import datetime
 import itertools
 import typing
 from collections.abc import Generator
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple
 
 import dns.rdtypes.ANY.TXT
 from dns import resolver
@@ -56,44 +59,44 @@ dkim_selectors: list[str] = (
         "cm",
         "mailo",
     ]
-    # + [f"s{i}" for i in range(0, 10)]
-    # + [f"s-{i}" for i in range(0, 10)]
-    # + [f"dk{i}" for i in range(0, 21)]
-    # + [f"dkim{i}" for i in range(0, 21)]
-    # + [f"dkim{i}" for i in range(0, 21)]
-    # + [f"sel{i}" for i in range(0, 10)]
-    # + [f"sel-{i}" for i in range(0, 10)]
-    # + [f"key{i}" for i in range(0, 10)]
-    # + [f"k{i}" for i in range(0, 10)]
-    # + [f"key{i}" for i in range(0, 10)]
-    # + [f"selector{i}" for i in range(0, 10)]
-    # + [f"v{i}" for i in range(0, 10)]
-    # + [f"hs{i}" for i in range(0, 10)]
+    + [f"s{i}" for i in range(0, 10)]
+    + [f"s-{i}" for i in range(0, 10)]
+    + [f"dk{i}" for i in range(0, 21)]
+    + [f"dkim{i}" for i in range(0, 21)]
+    + [f"dkim{i}" for i in range(0, 21)]
+    + [f"sel{i}" for i in range(0, 10)]
+    + [f"sel-{i}" for i in range(0, 10)]
+    + [f"key{i}" for i in range(0, 10)]
+    + [f"k{i}" for i in range(0, 10)]
+    + [f"key{i}" for i in range(0, 10)]
+    + [f"selector{i}" for i in range(0, 10)]
+    + [f"v{i}" for i in range(0, 10)]
+    + [f"hs{i}" for i in range(0, 10)]
     + [f"purelymail{i}" for i in range(0, 10)]
-    # + [
-    #     f"{year}{str(month).zfill(2)}"
-    #     for year, month in iter_year_month(2015, datetime.now().year)
-    # ]
-    # + [
-    #     f"{str(month).zfill(2)}{year}"
-    #     for year, month in iter_year_month(2015, datetime.now().year)
-    # ]
-    # + [
-    #     f"{year}{list(calendar.month_name)[month].lower()}"
-    #     for year, month in iter_year_month(2015, datetime.now().year)
-    # ]
-    # + [
-    #     f"{year}{list(calendar.month_abbr)[month].lower()}"
-    #     for year, month in iter_year_month(2015, datetime.now().year)
-    # ]
-    # + [
-    #     f"{year}{month}{day}"
-    #     for year, month, day in iter_year_month_day(2015, datetime.now().year)
-    # ]
-    # + [
-    #     f"{day}{month}{year}"
-    #     for year, month, day in iter_year_month_day(2015, datetime.now().year)
-    # ]
+    + [
+        f"{year}{str(month).zfill(2)}"
+        for year, month in iter_year_month(2015, datetime.now().year)
+    ]
+    + [
+        f"{str(month).zfill(2)}{year}"
+        for year, month in iter_year_month(2015, datetime.now().year)
+    ]
+    + [
+        f"{year}{list(calendar.month_name)[month].lower()}"
+        for year, month in iter_year_month(2015, datetime.now().year)
+    ]
+    + [
+        f"{year}{list(calendar.month_abbr)[month].lower()}"
+        for year, month in iter_year_month(2015, datetime.now().year)
+    ]
+    + [
+        f"{year}{month}{day}"
+        for year, month, day in iter_year_month_day(2015, datetime.now().year)
+    ]
+    + [
+        f"{day}{month}{year}"
+        for year, month, day in iter_year_month_day(2015, datetime.now().year)
+    ]
 )
 
 
@@ -107,11 +110,14 @@ selectors = [
 ]
 
 
-class DkimRecord(TypedDict):
+@dataclass()
+class DkimRecord:
     qname: str
     cname: str
     value: str
-    ttl: int
+
+    def to_dict(self) -> dict[str, str]:
+        return dataclasses.asdict(self)
 
 
 class ScrapedDkimKey(NamedTuple):
@@ -127,7 +133,6 @@ class ScrapedDkimKey(NamedTuple):
             qname=self.qname,
             cname=self.cname,
             value=value,
-            ttl=rrset.ttl,
         )
 
 
